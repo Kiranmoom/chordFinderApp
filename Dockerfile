@@ -22,5 +22,5 @@ EOF
 
 # 7) Copy your app and start it
 COPY . .
-CMD ["python3", "your_flask_app.py"]
+CMD ["python3", "guitarChordFinder.py"]
 
