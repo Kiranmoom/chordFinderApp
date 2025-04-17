@@ -5,7 +5,7 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Install OS-level dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     ffmpeg \
     build-essential \
     libfftw3-dev \
@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y \
     libavresample-dev \
     libsamplerate0-dev \
     python3-dev \
+    tzdara \
     && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip
