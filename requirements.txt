@@ -12,6 +12,7 @@ essentia==2.1b6.dev1110
 filelock==3.18.0
 Flask==3.1.0
 fsspec==2025.3.2
+gunicorn==20.1.0
 idna==3.10
 itsdangerous==2.2.0
 Jinja2==3.1.6
