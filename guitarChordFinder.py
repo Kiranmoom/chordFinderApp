@@ -63,7 +63,7 @@ def detect_chords():
     try:
         dem = subprocess.run(
             demucs_cmd,
-            check=True;
+            check=True,
             capture_output=True,
             text=True
         )
