@@ -24,29 +24,32 @@ def detect_chords():
     except Exception as e:
         return jsonify({'error': f'Failed to download audio: {e}'}), 400
 
-    # 2) Save to a temp MP3
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
+    # 2) Save to a temp file (m4a/mp3)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".m4a") as tmp:
         tmp.write(resp.content)
         tmp.flush()
-        mp3_path = tmp.name
+        m4a_path = tmp.name
 
-    # 3) Convert MP3 → WAV via ffmpeg
-    wav_path = mp3_path.replace(".mp3", ".wav")
+    # 3) Convert to WAV via ffmpeg
+    wav_path = m4a_path.replace(".m4a", ".wav")
     try:
-        ff = subprocess.run(
-            ["ffmpeg", "-y", "-i", mp3_path, "-ar", "44100", "-ac", "2", wav_path],
-            check=True, capture_output=True, text=True
+        ffmpeg_result = subprocess.run(
+            ["ffmpeg", "-y", "-i", m4a_path, "-ar", "44100", "-ac", "2", wav_path],
+            check=True,
+            capture_output=True,
+            text=True
         )
+        print("FFmpeg conversion successful")
     except subprocess.CalledProcessError as e:
         print("FFmpeg stdout:", e.stdout)
         print("FFmpeg stderr:", e.stderr)
         return jsonify({'error': f'FFmpeg conversion failed: {e.stderr}'}), 500
 
-    # Prepare output folder for Demucs
+    # 4) Prepare output folder
     output_folder = "demucs_output"
     os.makedirs(output_folder, exist_ok=True)
 
-    # 4) Run Demucs on the WAV (5 s chunks, CPU only)
+    # 5) Run Demucs
     print("Running Demucs to isolate guitar...")
     demucs_cmd = [
         "demucs",
@@ -60,18 +63,17 @@ def detect_chords():
     try:
         dem = subprocess.run(
             demucs_cmd,
-            check=True,
             capture_output=True,
             text=True
         )
         print("Demucs stdout:", dem.stdout)
         print("Demucs stderr:", dem.stderr)
-    except subprocess.CalledProcessError as e:
-        print("Demucs stdout:", e.stdout)
-        print("Demucs stderr:", e.stderr)
-        return jsonify({'error': f'Demucs failed: {e.stderr}'}), 500
+        if dem.returncode != 0:
+            return jsonify({'error': f'Demucs failed: {dem.stderr}'}), 500
+    except Exception as e:
+        return jsonify({'error': f'Demucs crashed: {str(e)}'}), 500
 
-    # 5) Locate the isolated guitar file
+    # 6) Find the guitar.wav output
     base = os.path.splitext(os.path.basename(wav_path))[0]
     guitar_path = os.path.join(output_folder, "htdemucs_6s", base, "guitar.wav")
     if not os.path.exists(guitar_path):
@@ -80,7 +82,7 @@ def detect_chords():
     print("Guitar-only audio ready:", guitar_path)
 
     # === Chord Detection ===
-    print("Running chord detection on isolated guitar audio...")
+    print("Running chord detection...")
     audio_data = es.MonoLoader(filename=guitar_path)()
     sample_rate = 44100
     frame_size = 2048
@@ -92,24 +94,23 @@ def detect_chords():
         hopSize=hop_size
     )(audio_data)
 
-    # HPCP computation
+    # HPCP and chord detection
     hpcp = es.HPCP(size=36)
-    hpcp_frames = [
-        hpcp(essentia.array([f]), essentia.array([c])) if f > 0 else essentia.array([0.0] * 36)
-        for f, c in zip(pitch_values, pitch_confidence)
-    ]
-
-    # Chord detection
     chord_detector = es.ChordsDetection()
-    chord_labels = [chord_detector([frame])[0][0] for frame in hpcp_frames]
-
-    # Group chords by time
     timeline = []
+
     last_chord = None
     start_frame = 0
-    for i, chord in enumerate(chord_labels):
+
+    for i, (freq, conf) in enumerate(zip(pitch_values, pitch_confidence)):
+        if freq > 0:
+            hpcp_frame = hpcp(essentia.array([freq]), essentia.array([conf]))
+            chord = chord_detector([hpcp_frame])[0][0]
+        else:
+            chord = "N"  # No chord
+
         if chord != last_chord:
-            if last_chord is not None:
+            if last_chord is not None and last_chord != "N":
                 start_time = round((start_frame * hop_size) / sample_rate, 2)
                 end_time = round((i * hop_size) / sample_rate, 2)
                 if end_time - start_time > 0.2:
@@ -117,14 +118,14 @@ def detect_chords():
             last_chord = chord
             start_frame = i
 
-    # final span
-    end_time = round((len(chord_labels) * hop_size) / sample_rate, 2)
+    # Final span
+    end_time = round((len(pitch_values) * hop_size) / sample_rate, 2)
     start_time = round((start_frame * hop_size) / sample_rate, 2)
-    if end_time - start_time > 0.2:
+    if last_chord and last_chord != "N" and end_time - start_time > 0.2:
         timeline.append((start_time, end_time, last_chord))
 
-    # 6) Cleanup temp files
-    os.remove(mp3_path)
+    # 7) Cleanup temp files
+    os.remove(m4a_path)
     os.remove(wav_path)
 
     chords_list = [{'start': s, 'end': e, 'chord': c} for s, e, c in timeline]
