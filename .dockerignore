@@ -1,0 +1,20 @@
+# Python cache files
+__pycache__/
+*.pyc
+
+# Demucs outputs
+demucs_output/
+.cache/
+
+# Git and editor files
+.git/
+node_modules/
+
+# Data artifacts
+*.zip
+*.tar.gz
+*.log
+data/
+build/
+dist/
+
