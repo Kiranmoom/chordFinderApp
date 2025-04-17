@@ -14,11 +14,13 @@ RUN apt-get update && apt-get install -y ffmpeg
 RUN pip install --upgrade pip
 RUN pip install flask essentia requests demucs ffmpeg-python
 
-# Pre-download Demucs model
-RUN python3 -c "from demucs.pretrained import fetch_model; fetch_model('htdemucs_6s')"
+# 6) Pre‑download the separation model into Torch’s cache
+RUN python3 - <<EOF
+from demucs.pretrained import get_model
+get_model("htdemucs_6s")
+EOF
 
-# Expose the port Render will use
-EXPOSE 5000
+# 7) Copy your app and start it
+COPY . .
+CMD ["python3", "your_flask_app.py"]
 
-# Start your Flask app
-CMD ["python", "guitarChordFinder.py"]
