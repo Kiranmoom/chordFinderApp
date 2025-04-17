@@ -63,14 +63,15 @@ def detect_chords():
     try:
         dem = subprocess.run(
             demucs_cmd,
+            check=True;
             capture_output=True,
             text=True
         )
         print("Demucs stdout:", dem.stdout)
         print("Demucs stderr:", dem.stderr)
-        if dem.returncode != 0:
-            return jsonify({'error': f'Demucs failed: {dem.stderr}'}), 500
-    except Exception as e:
+    except subprocess.CalledProcessError as e:
+        print("Demucs stdout (error):", e.stdout)
+        print("Demucs stderr (error):", e.stderr)
         return jsonify({'error': f'Demucs crashed: {str(e)}'}), 500
 
     # 6) Find the guitar.wav output
